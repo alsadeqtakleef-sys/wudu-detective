@@ -188,9 +188,9 @@
 
         let currentQuestionIndex = 0;
         let correctAnswersCount = 0;
-        let audioPlayer = null;
+        let audioContext;
+        let audioSourceNode;
         let audioCache = {};
-        let audioPromises = {};
         
         let timerInterval;
         let startTime;
@@ -310,7 +310,6 @@
             return array;
         }
 
-        // Helper functions for TTS API
         function base64ToArrayBuffer(base64) {
             const binary_string = window.atob(base64);
             const len = binary_string.length;
@@ -321,46 +320,23 @@
             return bytes.buffer;
         }
 
-        function pcmToWav(pcmData, sampleRate) {
-            const buffer = new ArrayBuffer(44 + pcmData.length * 2);
-            const view = new DataView(buffer);
-            writeString(view, 0, 'RIFF');
-            view.setUint32(4, 36 + pcmData.length * 2, true);
-            writeString(view, 8, 'WAVE');
-            writeString(view, 12, 'fmt ');
-            view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true);
-            view.setUint16(22, 1, true);
-            view.setUint32(24, sampleRate, true);
-            view.setUint32(28, sampleRate * 2, true);
-            view.setUint16(32, 2, true);
-            view.setUint16(34, 16, true);
-            writeString(view, 36, 'data');
-            view.setUint32(40, pcmData.length * 2, true);
-            let offset = 44;
-            for (let i = 0; i < pcmData.length; i++, offset += 2) {
-                view.setInt16(offset, pcmData[i], true);
-            }
-            return new Blob([view], { type: 'audio/wav' });
-        }
-
-        function writeString(view, offset, string) {
-            for (let i = 0; i < string.length; i++) {
-                view.setUint8(offset + i, string.charCodeAt(i));
+        // Initialize AudioContext on first user interaction
+        function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
         }
 
-        // Centralized function to stop and clear the audio player
         function stopAudio() {
-            if (audioPlayer) {
-                audioPlayer.pause();
-                audioPlayer.currentTime = 0;
-                audioPlayer = null;
+            if (audioSourceNode) {
+                audioSourceNode.stop();
+                audioSourceNode = null;
             }
         }
 
         async function getGeminiTTS(text, signal) {
-            const apiKey = ""; // The platform will provide the key at runtime
+            initAudioContext();
+            const apiKey = "";
             const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
             try {
                 const payload = {
@@ -377,7 +353,7 @@
                         }
                     }
                 };
-                
+
                 const response = await fetch(ttsApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -386,29 +362,16 @@
                 });
 
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error("API error response:", errorText);
-                    if (response.status === 401 || response.status === 403) {
-                        throw new Error(`TTS API call failed with status: ${response.status}. This usually means there's an issue with the API key or its permissions.`);
-                    } else {
-                        throw new Error(`TTS API call failed with status: ${response.status}`);
-                    }
+                    throw new Error(`TTS API call failed with status: ${response.status}`);
                 }
                 
                 const result = await response.json();
                 const audioData = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                const mimeType = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
 
-                if (audioData && mimeType && mimeType.startsWith("audio/")) {
-                    const sampleRateMatch = mimeType.match(/rate=(\d+)/);
-                    if (!sampleRateMatch) {
-                        throw new Error("Sample rate not found in mime type");
-                    }
-                    const sampleRate = parseInt(sampleRateMatch[1], 10);
-                    const pcmData = base64ToArrayBuffer(audioData);
-                    const pcm16 = new Int16Array(pcmData);
-                    const wavBlob = pcmToWav(pcm16, sampleRate);
-                    return URL.createObjectURL(wavBlob);
+                if (audioData) {
+                    const arrayBuffer = base64ToArrayBuffer(audioData);
+                    const decodedData = await audioContext.decodeAudioData(arrayBuffer);
+                    return decodedData;
                 } else {
                     throw new Error("Invalid audio response from API");
                 }
@@ -422,81 +385,60 @@
                 return null;
             }
         }
-        
+
         async function preloadAudioForQuestion(q) {
-            // Cancel any previous pre-loading
             if (audioAbortController) {
                 audioAbortController.abort();
             }
             audioAbortController = new AbortController();
             const signal = audioAbortController.signal;
 
-            // Clear cache and promises before loading new files
             audioCache = {};
-            audioPromises = {};
             
-            // Show loading state and disable the button while loading
             listenBtn.disabled = true;
             listenBtn.innerHTML = '<span class="loading-spinner"></span> جاري التحميل...';
             
-            // Define the audio texts to be fetched
             const questionTextToSpeak = `${q.title}. ${q.text}`;
             const correctExplanation = q.options.find(opt => opt.isCorrect).explanation;
             const incorrectExplanation = q.options.find(opt => !opt.isCorrect)?.explanation || 'للأسف، إجابة خاطئة.';
 
-            // Store promises in the audioPromises object
-            audioPromises['question'] = getGeminiTTS(questionTextToSpeak, signal);
-            audioPromises['correct'] = getGeminiTTS('أحسنتِ! إجابة صحيحة. ' + correctExplanation, signal);
-            audioPromises['incorrect'] = getGeminiTTS('للأسف، إجابة خاطئة. ' + incorrectExplanation, signal);
+            try {
+                const [questionAudio, correctAudio, incorrectAudio] = await Promise.all([
+                    getGeminiTTS(questionTextToSpeak, signal),
+                    getGeminiTTS('أحسنتِ! إجابة صحيحة. ' + correctExplanation, signal),
+                    getGeminiTTS('للأسف، إجابة خاطئة. ' + incorrectExplanation, signal)
+                ]);
 
-            // Wait for all promises to settle before updating the cache
-            const results = await Promise.allSettled(Object.values(audioPromises));
+                audioCache.question = questionAudio;
+                audioCache.correct = correctAudio;
+                audioCache.incorrect = incorrectAudio;
 
-            // Check results and update cache
-            Object.keys(audioPromises).forEach((key, index) => {
-                const result = results[index];
-                if (result.status === 'fulfilled' && !signal.aborted) {
-                    audioCache[key] = result.value;
-                } else if (result.reason?.name !== 'AbortError') {
-                    console.warn(`Failed to preload ${key} audio.`);
+            } catch (e) {
+                 console.error("Error during preloading:", e);
+                 // Gracefully handle preloading failures without crashing the app
+            } finally {
+                if (!signal.aborted) {
+                    listenBtn.disabled = false;
+                    listenBtn.textContent = '✨ اسمعي السؤال';
+                    quizLoading.classList.add('hidden');
+                    quizContent.classList.remove('hidden');
+                    circularTimerContainer.classList.remove('hidden');
+                    startTimer();
                 }
-            });
-
-            // Re-enable the button once all attempts are complete
-            if (!signal.aborted) {
-                listenBtn.disabled = false;
-                listenBtn.textContent = '✨ اسمعي السؤال';
-                quizLoading.classList.add('hidden');
-                quizContent.classList.remove('hidden');
-                circularTimerContainer.classList.remove('hidden');
-                startTimer();
             }
         }
-        
-        async function playTTS(type) {
-            // Stop any currently playing audio
+
+        function playTTS(type) {
             stopAudio();
-
-            // Wait for the specific audio file to be loaded before playing
-            if (audioPromises[type]) {
-                try {
-                    await audioPromises[type];
-                } catch (e) {
-                    console.error(`Promise for audio type "${type}" failed.`, e);
-                    return; // Exit if the promise failed
-                }
-            }
-
-            let audioUrl = audioCache[type];
-            if (!audioUrl) {
-                console.warn(`Audio URL for type "${type}" not found in cache. Skipping playback.`);
+            const audioBuffer = audioCache[type];
+            if (!audioBuffer) {
+                console.warn(`Audio buffer for type "${type}" not found in cache. Skipping playback.`);
                 return;
             }
-            
-            audioPlayer = new Audio(audioUrl);
-            audioPlayer.addEventListener('canplaythrough', () => {
-                audioPlayer.play().catch(e => console.error("Error playing audio:", e));
-            }, { once: true });
+            audioSourceNode = audioContext.createBufferSource();
+            audioSourceNode.buffer = audioBuffer;
+            audioSourceNode.connect(audioContext.destination);
+            audioSourceNode.start(0);
         }
 
         // Helper function for color interpolation
