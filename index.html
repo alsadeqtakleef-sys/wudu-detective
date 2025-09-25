@@ -1,0 +1,677 @@
+<!DOCTYPE-html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مسابقة محققات الوضوء</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js library for sound generation -->
+    <script src="https://unpkg.com/tone@14.7.58/build/Tone.js"></script>
+    <style>
+        body {
+            font-family: 'Amiri', serif;
+            direction: rtl;
+        }
+        /* Custom styles for the childish theme */
+        .bubbly-btn {
+            background-color: #ff914d;
+            border-radius: 9999px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s ease-in-out;
+        }
+        .bubbly-btn:hover {
+            transform: scale(1.05);
+            background-color: #ff7f33;
+        }
+        .correct-btn {
+            background-color: #4CAF50 !important;
+            color: white !important;
+        }
+        .incorrect-btn {
+            background-color: #f44336 !important;
+            color: white !important;
+        }
+        #score-display {
+            animation: bounceIn 0.5s ease-out;
+        }
+        @keyframes bounceIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); }
+        }
+        .intro-bg {
+            background-image: url("https://res.cloudinary.com/dhlxcif1m/image/upload/v1758538117/gwzeub6yzygdd5qfgx54.png");
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            height: 300px;
+            width: 100%;
+            pointer-events: none;
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #ff914d;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* New styles for the circular timer */
+        #circular-timer-container {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: conic-gradient(from 0deg, #4CAF50 360deg, #e2e8f0 360deg);
+        }
+        #timer-display {
+            z-index: 10;
+            color: #1a202c;
+        }
+        /* Style to prevent image downloading */
+        .non-downloadable-img {
+            pointer-events: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+    </style>
+</head>
+<body class="bg-yellow-100 flex items-center justify-center min-h-screen p-4">
+
+    <div id="game-container" class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-8 text-center flex flex-col items-center border-4 border-pink-400 transition-all duration-500">
+        
+        <!-- Intro Screen -->
+        <div id="intro-screen" class="space-y-6">
+            <img src="https://res.cloudinary.com/dhlxcif1m/image/upload/v1758725160/pjbpdnrwozpx28iwfyrn.png" alt="صورة كرتونية لطفلة ترتدي زي المحققة" class="w-80 mx-auto mb-6 non-downloadable-img"/>
+            <div class="h-8"></div>
+            <h1 class="text-4xl font-bold text-pink-600">مرحبًا أيتها المحققة الصغيرة!</h1>
+            <div class="intro-bg w-2/3 mx-auto mt-4 mb-4"></div>
+            <p class="text-lg text-gray-700 leading-relaxed">
+                أمامكِ مهمة سرية للغاية. لقد وصلتنا بعض البلاغات عن أخطاء في أداء الوضوء، وعليكِ اكتشافها. كل إجابة صحيحة تقربكِ من لقب **محققة الوضوء**.
+            </p>
+            <input type="text" id="player-name" placeholder="اكتبي اسمكِ هنا" class="w-full text-center p-3 rounded-xl border-2 border-pink-300 focus:outline-none focus:border-pink-500 transition mb-4">
+            <button id="start-btn" class="bubbly-btn text-white font-bold py-3 px-8 transition transform">
+                ابدئي التحقيق!
+            </button>
+        </div>
+
+        <!-- Quiz Screen -->
+        <div id="quiz-screen" class="hidden w-full space-y-6">
+            <!-- Added the new image here -->
+            <img src="https://res.cloudinary.com/dhlxcif1m/image/upload/v1758567120/jijoiozsz6asbqyqzgz3.png" alt="شعار المحققة" class="w-48 h-48 mx-auto rounded-full mb-6 border-4 border-pink-400 shadow-lg"/>
+
+            <div class="flex flex-col md:flex-row justify-between items-center w-full mb-4">
+                <div id="score-display" class="flex items-center justify-center space-x-2 space-x-reverse text-2xl font-bold text-pink-600 mb-2 md:mb-0">
+                    <span>النقاط: </span>
+                    <span id="score">0</span>
+                </div>
+            </div>
+            
+            <div id="quiz-content" class="w-full hidden space-y-6">
+                <!-- Moved the timer container here -->
+                <div id="circular-timer-container" class="relative w-24 h-24 rounded-full flex items-center justify-center mb-2 md:mb-0 hidden">
+                    <div id="timer-display" class="text-xl font-bold"></div>
+                </div>
+
+                <div class="flex items-center justify-center space-x-2 space-x-reverse">
+                     <h2 class="text-3xl font-bold text-pink-600" id="question-title"></h2>
+                     <!-- زر للاستماع إلى السؤال باستخدام Gemini TTS API -->
+                     <button id="listen-btn" class="bubbly-btn text-white font-bold py-2 px-4 transition transform text-lg">
+                        ✨ اسمعي السؤال
+                    </button>
+                </div>
+                <p class="text-lg text-gray-700 leading-relaxed" id="question-text"></p>
+                <div id="options-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                </div>
+            </div>
+            
+            <!-- Loading message for the quiz content -->
+            <div id="quiz-loading" class="flex flex-col items-center justify-center space-y-4">
+                <div class="loading-spinner w-12 h-12"></div>
+                <p id="loading-message" class="text-lg font-bold text-gray-700"></p>
+            </div>
+
+            <!-- هذه هي الرسالة التي ستظهر في سطر جديد مع مسافة إضافية -->
+            <div id="message" class="text-lg font-bold mt-4"></div>
+            <div class="flex flex-col md:flex-row justify-center items-center space-y-4 md:space-y-0 md:space-x-4 md:space-x-reverse">
+                <button id="next-btn" class="hidden bubbly-btn bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 transition transform mt-4">
+                    المهمة التالية
+                </button>
+            </div>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="result-screen" class="hidden text-center space-y-6">
+            <img id="badge-img" src="https://res.cloudinary.com/dhlxcif1m/image/upload/v1758570075/gacucf71xmvgt9nvkt5r.png" alt="شارة" class="hidden mx-auto my-4 non-downloadable-img"/>
+            <h2 class="text-3xl font-bold text-pink-600" id="result-title"></h2>
+            <p class="text-lg text-gray-700" id="result-text"></p>
+            <div class="flex flex-col md:flex-row justify-center items-center space-y-4 md:space-y-0 md:space-x-4 md:space-x-reverse">
+                <button onclick="window.location.reload()" class="bubbly-btn text-white font-bold py-3 px-8 transition transform">
+                    أعيدي مهمة التحقيق
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const introScreen = document.getElementById('intro-screen');
+        const quizScreen = document.getElementById('quiz-screen');
+        const resultScreen = document.getElementById('result-screen');
+        const startBtn = document.getElementById('start-btn');
+        const quizContent = document.getElementById('quiz-content');
+        const quizLoading = document.getElementById('quiz-loading');
+        const loadingMessageEl = document.getElementById('loading-message');
+        const questionTitle = document.getElementById('question-title');
+        const questionText = document.getElementById('question-text');
+        const optionsContainer = document.getElementById('options-container');
+        const messageEl = document.getElementById('message');
+        const nextBtn = document.getElementById('next-btn');
+        const listenBtn = document.getElementById('listen-btn');
+        const resultTitle = document.getElementById('result-title');
+        const resultText = document.getElementById('result-text');
+        const scoreEl = document.getElementById('score');
+        const playerNameInput = document.getElementById('player-name');
+        const timerDisplay = document.getElementById('timer-display');
+        const circularTimerContainer = document.getElementById('circular-timer-container');
+        const gameContainer = document.getElementById('game-container');
+        const badgeImg = document.getElementById('badge-img');
+
+        let currentQuestionIndex = 0;
+        let correctAnswersCount = 0;
+        let audioPlayer = null;
+        let audioCache = {}; // New cache to store pre-loaded audio URLs
+        let audioPromises = {}; // New object to store promises for audio loading
+        
+        let timerInterval;
+        let startTime;
+        const maxTime = 120; // 2 minutes in seconds
+        const maxPointsPerQuestion = 10;
+        let warningPlayed = false;
+
+        // Use AbortController to cancel ongoing fetch requests
+        let audioAbortController = null;
+
+        // Initialize Tone.js synths for sound effects
+        const correctSound = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: "triangle" },
+            envelope: {
+                attack: 0.05,
+                decay: 0.2,
+                sustain: 0,
+                release: 0.2
+            }
+        }).toDestination();
+        
+        const incorrectSound = new Tone.NoiseSynth({
+            noise: { type: "pink" },
+            envelope: {
+                attack: 0.005,
+                decay: 0.1,
+                sustain: 0
+            }
+        }).toDestination();
+
+        const warningSound = new Tone.Synth().toDestination();
+        const timeUpSound = new Tone.Synth().toDestination();
+
+        // Gemini API configuration
+        const apiKey = "";
+        const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+
+        // Hardcoded questions array
+        let questions = [
+            {
+                title: 'ملف القضية رقم 1',
+                text: 'نَوَتْ نور الوضوء لصلاة الظهرين، تمضمضتْ واستنشقتْ وبعدما غسلت وجهها ويدها اليمنى، سمعت أمها تناديها فذهبت لها لبعض الوقت ثم عادت لتكمل وضوءها . ما هو الخطأ؟',
+                options: [
+                    { text: 'مخالفة شرط طهارة أعضاء الوضوء', isCorrect: false, explanation: ' لم تذكر القضية أن أعضاء الوضوء غير طاهرة.' },
+                    { text: 'مخالفة شرط الموالاة', isCorrect: true, explanation: 'الموالاة هي أن تكون أفعال الوضوء متتالية بدون فاصل.' },
+                    { text: 'مخالفة عدم غسل القدمين', isCorrect: false, explanation: 'نور لم تنه وضوءها بعد، ولكنه باطل بسبب الفاصل الطويل.' }
+                ]
+            },
+            {
+                title: 'ملف القضية رقم 2',
+                text: 'كانت زهراء تلعب بالصلصال(الطِّين)، وتوضأت دون أن تزيله من يديها. ما هو الخطأ؟',
+                options: [
+                    { text: 'مخالفةالماء المضاف ', isCorrect: false, explanation: 'الخطأ ليس في نوعية الماء.' },
+                    { text: 'مخالفة شرط عدم وجود حاجب', isCorrect: true, explanation: 'الصلصال حاجز يمنع وصول الماء للجلد.' },
+                    { text: ' مخالفة شرط الترتيب ', isCorrect: false, explanation: 'الخطأ ليس في ترتيب الوضوء .' }
+                ]
+            },
+            {
+                title: 'ملف القضية رقم 3',
+                text: 'قامت زينب بصب الماء على يديها وغسلهما للوضوء، ولكنها لم تحرك خاتَمَها ولم تُزِِيْل ساعتها، فبقي جزء من جلدها جافاً. . ما هو الخطأ؟',
+                options: [
+                    { text: 'مخالفة الماء المضاف', isCorrect: false, explanation: 'الماء كان مطلقًا في هذه القصة.' },
+                    { text: 'مخالفة شرط عدم وجود حاجب', isCorrect: true, explanation: 'الخاتَم والساعة يمنعان وصول الماء للجِلد.' },
+                    { text: 'مخالفة ترتيب الوضوء', isCorrect: false, explanation: 'الخطأ ليس في ترتيب الوضوء.' }
+                ]
+            },
+            {
+                title: 'ملف القضية رقم 4',
+                text: 'أرادت رُقَيَّة أن تتوضأ، فبدأت بغسل وجهها، ثم مسحت على رأسها، ثم غسلت يديها. ما هو الخطأ؟',
+                options: [
+                    { text: 'الوضوء بماء غير طاهر', isCorrect: false, explanation: ' لم توضح القضية أن الماء كان غير طاهر.' },
+                    { text: 'مخالفة شرط الترتيب', isCorrect: true, explanation: 'الترتيب الصحيح لواجبات الوضوء هو : غسل الوجه، ثم اليد اليمنى، ثم اليد اليسرى، ثم مسح الرأس، ثم مسح القدم اليمنى، ثم القدم اليسرى.' },
+                    { text: 'لم تغسل وجهها', isCorrect: false, explanation: 'لقد غسلت وجهها.' }
+                ]
+            },
+            {
+                title: 'ملف القضية رقم 5',
+                text: 'توضأت منى من الماء المخصص للشُرب في حرم الإمام الحسين عليه السلام. فما هو الشرط الذي خالفتهْ؟',
+                options: [
+                    { text: 'الماء مخصص للشرب فقط وغير مباح للوضوء', isCorrect: true, explanation: 'رائع! لقد اكتشفتِ الخطأ. الوضوء لا يجوز بالماء المخصص للشرب الذي لا يملكه الشخص.' },
+                    { text: 'الماء بارد  ', isCorrect: false, explanation: 'لا يعتبر من شروط الوضوء درجة حرارة الماء  .' },
+                    { text: 'مخالفة شرط الموالاة', isCorrect: false, explanation: ' لم تذكر القضية أنها لم تتابع أفعال الوضوء.' }
+                ]
+            },
+            {
+                title: 'ملف القضية رقم 6',
+                text: 'بسبب انقطاع الماء في المدرسة ، توضأت فاطمة بماء صديقتها دون رضاها ، فما الحكم الذي خالفتهْ؟',
+                options: [
+                    { text: 'مخالفة شرط طهارة الماء', isCorrect: false, explanation: 'طهارة الماء لم تكن السبب.' },
+                    { text: 'مخالفة شرط الماء المباح', isCorrect: true, explanation: 'لابد أن يكون الماء مباحاً، فإذا كان مغصوبًا أو لا يملك استخدامه فلا يجوز الوضوء به.' },
+                    { text: 'مخالفة شرط الماء المطلق', isCorrect: false, explanation: 'الماء كان مطلقاً.' }
+                ]
+            },
+            {
+                title: 'ملف القضية رقم 7',
+                text: 'جُرِحَتْ إصبع يد منال مما أدى لخروج الدم فوضعت عليها لَصقة الجروح وتوضأت ، فما الحكم الذي خالفتهْ؟',
+                options: [
+                    { text: 'مخالفة شرط الموالاة', isCorrect: false, explanation: 'الموالاة هي أن تكون أفعال الوضوء متتالية بدون فاصل.' },
+                    { text: 'مخالفة شرط المباشرة للوضوء بنفسها', isCorrect: false, explanation: 'منال توضأت بنفسها، لم تطلب المساعدة.' },
+                    { text: 'مخالفة شرط عدم وجود حاجز يمنع وصول الماء', isCorrect: true, explanation: 'لصقة الجروح تعتبر حاجباً يمنع وصول الماء إلى البشرة، وهو ما يُبطل الوضوء.' }
+                ]
+            },
+            {
+                title: 'ملف القضية رقم 8',
+                text: 'مَنَعَتْ الطبيبة صديقتنا ضُحى من استخدام الماء على يديها بسبب الحروق التي أصابتها ولكنها توضأت للصلاة ، فما الحكم الذي خالفتهْ؟',
+                options: [
+                    { text: 'مخالفة شرط الماء المباح', isCorrect: false, explanation: 'الماء المباح هو الذي لا يملكه أحد أو لا يوجد مانع شرعي من استخدامه.' },
+                    { text: 'مخالفة شرط عدم وجود مانع من استخدام الماء', isCorrect: true, explanation: ' أنتِ رائعة! عندما يمنع الطبيب من استخدام الماء، لا يجوز الوضوء بالماء ويجب التيمم.' },
+                    { text: 'مخالفة شرط المباشرة للوضوء بنفسها', isCorrect: false, explanation: 'ضحى توضأت بنفسها، ولم تطلب المساعدة.' }
+                ]
+            }
+        ];
+
+        // Function to shuffle an array
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // Helper functions for TTS API
+        function base64ToArrayBuffer(base64) {
+            const binary_string = window.atob(base64);
+            const len = binary_string.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary_string.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function pcmToWav(pcmData, sampleRate) {
+            const buffer = new ArrayBuffer(44 + pcmData.length * 2);
+            const view = new DataView(buffer);
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + pcmData.length * 2, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, pcmData.length * 2, true);
+            let offset = 44;
+            for (let i = 0; i < pcmData.length; i++, offset += 2) {
+                view.setInt16(offset, pcmData[i], true);
+            }
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        // Centralized function to stop and clear the audio player
+        function stopAudio() {
+            if (audioPlayer) {
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                audioPlayer = null;
+            }
+        }
+
+        async function getGeminiTTS(text, signal) {
+            const apiKey = ""; // The platform will provide the key at runtime
+            const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+            try {
+                const payload = {
+                    contents: [{ parts: [{ text: text }] }],
+                    generationConfig: {
+                        responseModalities: ["AUDIO"],
+                        speechConfig: {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: {
+                                    voiceName: "Zephyr",
+                                    languageCode: "ar-EG"
+                                }
+                            }
+                        }
+                    }
+                };
+                
+                const response = await fetch(ttsApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    signal: signal
+                });
+
+                if (!response.ok) {
+                    // Check for specific error status codes and provide a user-friendly message
+                    if (response.status === 401 || response.status === 403) {
+                        throw new Error(`TTS API call failed with status: ${response.status}. This usually means there's an issue with the API key or its permissions. Please contact support.`);
+                    } else {
+                        throw new Error(`TTS API call failed with status: ${response.status}`);
+                    }
+                }
+                
+                const result = await response.json();
+                const audioData = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                const mimeType = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
+
+                if (audioData) {
+                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const pcm16 = new Int16Array(pcmData);
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    return URL.createObjectURL(wavBlob);
+                } else {
+                    throw new Error("Invalid audio response from API");
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.log("Audio fetch was aborted.");
+                    return null;
+                }
+                console.error("Error with TTS API:", error);
+                messageEl.textContent = 'حدث خطأ في تشغيل الصوت. يرجى المحاولة مرة أخرى لاحقًا.';
+                return null;
+            }
+        }
+        
+        async function preloadAudioForQuestion(q) {
+            // Cancel any previous pre-loading
+            if (audioAbortController) {
+                audioAbortController.abort();
+            }
+            audioAbortController = new AbortController();
+            const signal = audioAbortController.signal;
+
+            // Clear cache and promises before loading new files
+            audioCache = {};
+            audioPromises = {};
+            
+            // Show loading state and disable the button while loading
+            listenBtn.disabled = true;
+            listenBtn.innerHTML = '<span class="loading-spinner"></span> جاري التحميل...';
+            
+            // Define the audio texts to be fetched
+            const questionTextToSpeak = `${q.title}. ${q.text}`;
+            const correctExplanation = q.options.find(opt => opt.isCorrect).explanation;
+            const incorrectExplanation = q.options.find(opt => !opt.isCorrect)?.explanation || 'للأسف، إجابة خاطئة.';
+
+            // Store promises in the audioPromises object
+            audioPromises['question'] = getGeminiTTS(questionTextToSpeak, signal);
+            audioPromises['correct'] = getGeminiTTS('أحسنتِ! إجابة صحيحة. ' + correctExplanation, signal);
+            audioPromises['incorrect'] = getGeminiTTS('للأسف، إجابة خاطئة. ' + incorrectExplanation, signal);
+
+            // Wait for all promises to settle before updating the cache
+            const results = await Promise.allSettled(Object.values(audioPromises));
+
+            // Check results and update cache
+            Object.keys(audioPromises).forEach((key, index) => {
+                const result = results[index];
+                if (result.status === 'fulfilled' && !signal.aborted) {
+                    audioCache[key] = result.value;
+                } else if (result.reason?.name !== 'AbortError') {
+                    console.warn(`Failed to preload ${key} audio.`);
+                }
+            });
+
+            // Re-enable the button once all attempts are complete
+            if (!signal.aborted) {
+                listenBtn.disabled = false;
+                listenBtn.textContent = '✨ اسمعي السؤال';
+                quizLoading.classList.add('hidden');
+                quizContent.classList.remove('hidden');
+                circularTimerContainer.classList.remove('hidden');
+                startTimer();
+            }
+        }
+        
+        async function playTTS(type) {
+            // Stop any currently playing audio
+            stopAudio();
+
+            // Wait for the specific audio file to be loaded before playing
+            if (audioPromises[type]) {
+                try {
+                    await audioPromises[type];
+                } catch (e) {
+                    console.error(`Promise for audio type "${type}" failed.`, e);
+                    return; // Exit if the promise failed
+                }
+            }
+
+            let audioUrl = audioCache[type];
+            if (!audioUrl) {
+                console.warn(`Audio URL for type "${type}" not found in cache. Skipping playback.`);
+                return;
+            }
+            
+            audioPlayer = new Audio(audioUrl);
+            audioPlayer.addEventListener('canplaythrough', () => {
+                audioPlayer.play().catch(e => console.error("Error playing audio:", e));
+            }, { once: true });
+        }
+
+        // Helper function for color interpolation
+        function interpolateColor(color1, color2, percentage) {
+            const r1 = parseInt(color1.substring(1, 3), 16);
+            const g1 = parseInt(color1.substring(3, 5), 16);
+            const b1 = parseInt(color1.substring(5, 7), 16);
+            const r2 = parseInt(color2.substring(3, 5), 16);
+            const g2 = parseInt(color2.substring(3, 5), 16);
+            const b2 = parseInt(color2.substring(5, 7), 16);
+            const r = Math.round(r1 + (r2 - r1) * percentage).toString(16).padStart(2, '0');
+            const g = Math.round(g1 + (g2 - g1) * percentage).toString(16).padStart(2, '0');
+            const b = Math.round(b1 + (b2 - b1) * percentage).toString(16).padStart(2, '0');
+            return `#${r}${g}${b}`;
+        }
+
+        function startTimer() {
+            startTime = Date.now();
+            warningPlayed = false;
+            timerInterval = setInterval(() => {
+                const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+                const remainingTime = Math.max(0, maxTime - elapsedTime);
+                const minutes = Math.floor(remainingTime / 60);
+                const seconds = remainingTime % 60;
+                timerDisplay.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+
+                // Calculate percentages for the gradient
+                const percentageElapsed = elapsedTime / maxTime;
+                const percentageRemaining = 1 - percentageElapsed;
+                const degreesRemaining = percentageRemaining * 360;
+
+                let remainingColor;
+                if (percentageRemaining > 0.5) {
+                    const segmentPercentage = (percentageRemaining - 0.5) * 2;
+                    remainingColor = interpolateColor('#FFD700', '#4CAF50', segmentPercentage);
+                } else {
+                    const segmentPercentage = percentageRemaining * 2;
+                    remainingColor = interpolateColor('#f44336', '#FFD700', segmentPercentage);
+                }
+
+                const elapsedColor = '#e2e8f0';
+                circularTimerContainer.style.background = `conic-gradient(from 0deg, ${remainingColor} ${degreesRemaining}deg, ${elapsedColor} ${degreesRemaining}deg)`;
+
+                if (remainingTime <= 10 && !warningPlayed) {
+                    warningSound.triggerAttackRelease('E4', '8n');
+                    warningPlayed = true;
+                }
+
+                if (remainingTime <= 0) {
+                    stopTimer();
+                    timeUpSound.triggerAttackRelease('F#2', '2n');
+                    messageEl.textContent = 'انتهى الوقت! لم تحصلي على نقاط.';
+                    Array.from(optionsContainer.children).forEach(btn => btn.disabled = true);
+                    nextBtn.classList.remove('hidden');
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(timerInterval);
+        }
+
+        // Main game logic
+        function showQuestion(q) {
+            stopAudio();
+            stopTimer();
+            quizContent.classList.add('hidden');
+            quizLoading.classList.remove('hidden');
+            
+            loadingMessageEl.textContent = `جاري تحميل ${q.title}...`; // Modified loading message
+            
+            questionTitle.textContent = q.title;
+            questionText.textContent = q.text;
+            optionsContainer.innerHTML = '';
+            
+            const shuffledOptions = shuffleArray([...q.options]);
+
+            shuffledOptions.forEach(option => {
+                const button = document.createElement('button');
+                button.textContent = option.text;
+                button.classList.add('bubbly-btn', 'text-white', 'font-bold', 'py-3', 'px-6', 'rounded-full', 'shadow', 'transition', 'hover:bg-pink-400');
+                button.onclick = () => checkAnswer(button, option);
+                optionsContainer.appendChild(button);
+            });
+            messageEl.textContent = '';
+            nextBtn.classList.add('hidden');
+            
+            preloadAudioForQuestion(q);
+        }
+
+        function checkAnswer(button, option) {
+            stopAudio(); // Stop any pending audio from the question
+            stopTimer();
+            const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+            const pointsEarned = Math.max(0, maxPointsPerQuestion - Math.floor((elapsedTime / maxTime) * maxPointsPerQuestion));
+
+            if (option.isCorrect) {
+                button.classList.remove('bubbly-btn');
+                button.classList.add('correct-btn');
+                messageEl.innerHTML = `إجابة صحيحة! أحسنتِ أيتها المحققة. لقد حصلتِ على ${pointsEarned} نقاط! <span class="text-2xl">💧</span>`;
+                correctAnswersCount += pointsEarned;
+                scoreEl.textContent = correctAnswersCount;
+                correctSound.triggerAttackRelease(['C5', 'E5', 'G5'], '8n');
+                playTTS('correct');
+            } else {
+                button.classList.remove('bubbly-btn');
+                button.classList.add('incorrect-btn');
+                messageEl.textContent = `إجابة خاطئة. ${option.explanation}`;
+                Array.from(optionsContainer.children).forEach(btn => {
+                    const correctOption = (currentQuestionIndex < questions.length) ?
+                                         questions[currentQuestionIndex].options.find(opt => opt.text === btn.textContent && opt.isCorrect) :
+                                         null;
+                    if (correctOption) {
+                        btn.classList.add('correct-btn');
+                    }
+                });
+                incorrectSound.triggerAttackRelease("8n");
+                playTTS('incorrect');
+            }
+            
+            Array.from(optionsContainer.children).forEach(btn => btn.disabled = true);
+            nextBtn.classList.remove('hidden');
+        }
+
+        function showResults() {
+            stopAudio();
+            quizScreen.classList.add('hidden');
+            resultScreen.classList.remove('hidden');
+            
+            const totalQuestions = questions.length;
+            const playerName = playerNameInput.value.trim();
+            
+            gameContainer.classList.remove('result-bg');
+            gameContainer.classList.add('bg-white');
+            
+            if (correctAnswersCount >= 50) {
+                resultTitle.textContent = `${playerName}، المحققة الرائعة!`;
+                resultText.textContent = `لقد نجحتِ في المهمة وحصلتِ على ${correctAnswersCount} من أصل ${totalQuestions * maxPointsPerQuestion} نقاط ممكنة. تهانينا!`;
+                badgeImg.classList.remove('hidden');
+            } else {
+                resultTitle.textContent = `${playerName}، حاولي مرة أخرى!`;
+                resultText.textContent = `لقد حصلتِ على ${correctAnswersCount} من أصل ${totalQuestions * maxPointsPerQuestion} نقاط ممكنة. يمكنكِ المحاولة مرة أخرى لتحصلي على الشارة.`;
+                badgeImg.classList.add('hidden');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            startBtn.addEventListener('click', () => {
+                const playerName = playerNameInput.value.trim();
+                if (playerName === '') {
+                    messageEl.textContent = 'من فضلكِ، اكتبي اسمكِ قبل البدء!';
+                    return;
+                }
+                messageEl.textContent = '';
+                introScreen.classList.add('hidden');
+                quizScreen.classList.remove('hidden');
+                currentQuestionIndex = 0;
+                correctAnswersCount = 0;
+                showQuestion(questions[currentQuestionIndex]);
+            });
+
+            nextBtn.addEventListener('click', () => {
+                stopAudio();
+                currentQuestionIndex++;
+                if (currentQuestionIndex < questions.length) {
+                    showQuestion(questions[currentQuestionIndex]);
+                } else {
+                    showResults();
+                }
+            });
+
+            listenBtn.addEventListener('click', () => {
+                playTTS('question');
+            });
+        });
+    </script>
+</body>
+</html>
