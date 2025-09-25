@@ -101,7 +101,6 @@
             <p class="text-lg text-gray-700 leading-relaxed">
                 أمامكِ مهمة سرية للغاية. لقد وصلتنا بعض البلاغات عن أخطاء في أداء الوضوء، وعليكِ اكتشافها. كل إجابة صحيحة تقربكِ من لقب **محققة الوضوء**.
             </p>
-            <input type="text" id="player-name" placeholder="اكتبي اسمكِ هنا" class="w-full text-center p-3 rounded-xl border-2 border-pink-300 focus:outline-none focus:border-pink-500 transition mb-4">
             <button id="start-btn" class="bubbly-btn text-white font-bold py-3 px-8 transition transform">
                 ابدئي التحقيق!
             </button>
@@ -182,7 +181,6 @@
         const resultTitle = document.getElementById('result-title');
         const resultText = document.getElementById('result-text');
         const scoreEl = document.getElementById('score');
-        const playerNameInput = document.getElementById('player-name');
         const timerDisplay = document.getElementById('timer-display');
         const circularTimerContainer = document.getElementById('circular-timer-container');
         const gameContainer = document.getElementById('game-container');
@@ -191,8 +189,8 @@
         let currentQuestionIndex = 0;
         let correctAnswersCount = 0;
         let audioPlayer = null;
-        let audioCache = {}; // New cache to store pre-loaded audio URLs
-        let audioPromises = {}; // New object to store promises for audio loading
+        let audioCache = {};
+        let audioPromises = {};
         
         let timerInterval;
         let startTime;
@@ -200,7 +198,6 @@
         const maxPointsPerQuestion = 10;
         let warningPlayed = false;
 
-        // Use AbortController to cancel ongoing fetch requests
         let audioAbortController = null;
 
         // Initialize Tone.js synths for sound effects
@@ -226,11 +223,9 @@
         const warningSound = new Tone.Synth().toDestination();
         const timeUpSound = new Tone.Synth().toDestination();
 
-        // Gemini API configuration
         const apiKey = "";
         const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
 
-        // Hardcoded questions array
         let questions = [
             {
                 title: 'ملف القضية رقم 1',
@@ -252,7 +247,7 @@
             },
             {
                 title: 'ملف القضية رقم 3',
-                text: 'قامت زينب بصب الماء على يديها وغسلهما للوضوء، ولكنها لم تحرك خاتَمَها ولم تُزِِيْل ساعتها، فبقي جزء من جلدها جافاً. . ما هو الخطأ؟',
+                text: 'قامت زينب بصب الماء على يديها وغسلهما للوضوء، ولكنها لم تحرك خاتَمها ولم تُزِِيْل ساعتها، فبقي جزء من جلدها جافاً. . ما هو الخطأ؟',
                 options: [
                     { text: 'مخالفة الماء المضاف', isCorrect: false, explanation: 'الماء كان مطلقًا في هذه القصة.' },
                     { text: 'مخالفة شرط عدم وجود حاجب', isCorrect: true, explanation: 'الخاتَم والساعة يمنعان وصول الماء للجِلد.' },
@@ -523,7 +518,6 @@
                 const seconds = remainingTime % 60;
                 timerDisplay.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 
-                // Calculate percentages for the gradient
                 const percentageElapsed = elapsedTime / maxTime;
                 const percentageRemaining = 1 - percentageElapsed;
                 const degreesRemaining = percentageRemaining * 360;
@@ -566,7 +560,7 @@
             quizContent.classList.add('hidden');
             quizLoading.classList.remove('hidden');
             
-            loadingMessageEl.textContent = `جاري تحميل ${q.title}...`; // Modified loading message
+            loadingMessageEl.textContent = `جاري تحميل ${q.title}...`;
             
             questionTitle.textContent = q.title;
             questionText.textContent = q.text;
@@ -588,7 +582,7 @@
         }
 
         function checkAnswer(button, option) {
-            stopAudio(); // Stop any pending audio from the question
+            stopAudio();
             stopTimer();
             const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
             const pointsEarned = Math.max(0, maxPointsPerQuestion - Math.floor((elapsedTime / maxTime) * maxPointsPerQuestion));
@@ -627,30 +621,25 @@
             resultScreen.classList.remove('hidden');
             
             const totalQuestions = questions.length;
-            const playerName = playerNameInput.value.trim();
             
             gameContainer.classList.remove('result-bg');
             gameContainer.classList.add('bg-white');
             
             if (correctAnswersCount >= 50) {
-                resultTitle.textContent = `${playerName}، المحققة الرائعة!`;
+                resultTitle.textContent = `أحسنتِ! محققة ممتازة!`;
                 resultText.textContent = `لقد نجحتِ في المهمة وحصلتِ على ${correctAnswersCount} من أصل ${totalQuestions * maxPointsPerQuestion} نقاط ممكنة. تهانينا!`;
                 badgeImg.classList.remove('hidden');
             } else {
-                resultTitle.textContent = `${playerName}، حاولي مرة أخرى!`;
+                resultTitle.textContent = `حاولي مرة أخرى!`;
                 resultText.textContent = `لقد حصلتِ على ${correctAnswersCount} من أصل ${totalQuestions * maxPointsPerQuestion} نقاط ممكنة. يمكنكِ المحاولة مرة أخرى لتحصلي على الشارة.`;
                 badgeImg.classList.add('hidden');
             }
         }
 
+
         document.addEventListener('DOMContentLoaded', () => {
-            startBtn.addEventListener('click', () => {
-                const playerName = playerNameInput.value.trim();
-                if (playerName === '') {
-                    messageEl.textContent = 'من فضلكِ، اكتبي اسمكِ قبل البدء!';
-                    return;
-                }
-                messageEl.textContent = '';
+             // Attach event listeners after DOM is loaded
+             startBtn.addEventListener('click', () => {
                 introScreen.classList.add('hidden');
                 quizScreen.classList.remove('hidden');
                 currentQuestionIndex = 0;
