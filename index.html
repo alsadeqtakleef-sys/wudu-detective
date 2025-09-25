@@ -227,7 +227,10 @@
         const timeUpSound = new Tone.Synth().toDestination();
 
         // Gemini API configuration
-        const apiKey = "";
+        // قم بوضع مفتاح API الخاص بكِ هنا ليتمكن الكود من العمل على GitHub Pages أو أي خادم ويب آخر.
+        // يمكنكِ الحصول عليه من: https://aistudio.google.com/app/apikey
+        // Example: const apiKey = "YOUR_API_KEY_HERE";
+        const apiKey = "AIzaSyDcaeggvXQaewUwPnUJ3_GjW2AN15CP7hM"; // يرجى استبدال هذا النص بمفتاح API الخاص بكِ
         const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
 
         // Hardcoded questions array
@@ -365,7 +368,12 @@
         }
 
         async function getGeminiTTS(text, signal) {
-            const apiKey = ""; // The platform will provide the key at runtime
+            // Check if API key is provided
+            if (apiKey === "الصقي_مفتاحك_هنا") {
+                messageEl.textContent = 'خطأ: مفتاح API مفقود. يرجى إضافته في الكود.';
+                console.error("Error: Missing API key. Please add your Gemini API key to the code.");
+                return null;
+            }
             const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
             try {
                 const payload = {
