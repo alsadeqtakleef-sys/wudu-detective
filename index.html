@@ -196,6 +196,8 @@
         let warningPlayed = false;
 
         let audioCache = {};
+        let audioContext = null;
+        let audioSourceNode = null;
 
         // Initialize Tone.js synths for sound effects
         const correctSound = new Tone.PolySynth(Tone.Synth, {
@@ -304,73 +306,43 @@
             return array;
         }
 
-        // Helper function to convert base64 to ArrayBuffer
-        function base64ToArrayBuffer(base64) {
-            const binary_string = atob(base64);
-            const len = binary_string.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binary_string.charCodeAt(i);
-            }
-            return bytes.buffer;
-        }
-        
-        // New helper function to convert PCM audio data to a WAV Blob
-        function pcmToWav(pcmData, sampleRate) {
-            const numChannels = 1;
-            const bitsPerSample = 16;
-            const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
-            const blockAlign = numChannels * (bitsPerSample / 8);
-
-            const buffer = new ArrayBuffer(44 + pcmData.length * 2);
-            const view = new DataView(buffer);
-
-            // RIFF chunk descriptor
-            writeString(view, 0, 'RIFF');
-            view.setUint32(4, 36 + pcmData.length * 2, true);
-            writeString(view, 8, 'WAVE');
-            
-            // FMT sub-chunk
-            writeString(view, 12, 'fmt ');
-            view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true); // Audio format (1 = PCM)
-            view.setUint16(22, numChannels, true);
-            view.setUint32(24, sampleRate, true);
-            view.setUint32(28, byteRate, true);
-            view.setUint16(32, blockAlign, true);
-            view.setUint16(34, bitsPerSample, true);
-            
-            // Data sub-chunk
-            writeString(view, 36, 'data');
-            view.setUint32(40, pcmData.length * 2, true);
-
-            // Write PCM data
-            for (let i = 0; i < pcmData.length; i++) {
-                view.setInt16(44 + i * 2, pcmData[i], true);
+        async function playAudio(base64Data, mimeType) {
+            // Stop any currently playing audio
+            if (audioSourceNode) {
+                audioSourceNode.stop();
+                audioSourceNode.disconnect();
             }
 
-            return new Blob([view], { type: 'audio/wav' });
-        }
+            // Create AudioContext if it doesn't exist
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
 
-        function writeString(view, offset, string) {
-            for (let i = 0; i < string.length; i++) {
-                view.setUint8(offset + i, string.charCodeAt(i));
+            try {
+                // Decode the base64 string to a binary array buffer
+                const binary_string = atob(base64Data);
+                const len = binary_string.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binary_string.charCodeAt(i);
+                }
+                const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+
+                // Create a buffer source node and connect it to the audio context
+                audioSourceNode = audioContext.createBufferSource();
+                audioSourceNode.buffer = audioBuffer;
+                audioSourceNode.connect(audioContext.destination);
+
+                // Play the sound
+                audioSourceNode.start(0);
+
+            } catch (error) {
+                console.error("Error decoding or playing audio:", error);
+                messageEl.textContent = 'حدث خطأ في تشغيل الصوت: ' + error.message + '. يرجى المحاولة مرة أخرى.';
             }
         }
 
-        let audioSource = null;
-        let audioAbortController = null;
-
-        function playAudioFromUrl(url) {
-            if (audioSource) {
-                audioSource.pause();
-                audioSource.currentTime = 0;
-            }
-            audioSource = new Audio(url);
-            audioSource.play().catch(e => console.error("Error playing audio:", e));
-        }
-
-        async function getGeminiTTS(text, signal) {
+        async function getGeminiTTS(text) {
             const apiKey = "";
             const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
             try {
@@ -392,7 +364,6 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
-                    signal: signal
                 });
 
                 if (!response.ok) {
@@ -406,34 +377,19 @@
                 const audioData = part?.inlineData?.data;
                 const mimeType = part?.inlineData?.mimeType;
 
-                if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
-                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
-                    const pcmData = new Int16Array(base64ToArrayBuffer(audioData));
-                    const wavBlob = pcmToWav(pcmData, sampleRate);
-                    return URL.createObjectURL(wavBlob);
+                if (audioData && mimeType) {
+                    return { audioData, mimeType };
                 } else {
                     throw new Error("Invalid audio response from API");
                 }
             } catch (error) {
-                if (error.name === 'AbortError') {
-                    console.log("Audio fetch was aborted.");
-                    return null;
-                }
                 console.error("Error with TTS API:", error);
-                messageEl.textContent = 'حدث خطأ في تشغيل الصوت. يرجى المحاولة مرة أخرى لاحقًا.';
+                messageEl.textContent = 'حدث خطأ في جلب الصوت: ' + error.message;
                 return null;
             }
         }
         
         async function preloadAudioForQuestion(q) {
-            if (audioAbortController) {
-                audioAbortController.abort();
-            }
-            audioAbortController = new AbortController();
-            const signal = audioAbortController.signal;
-
-            audioCache = {};
-            
             listenBtn.disabled = true;
             listenBtn.innerHTML = '<span class="loading-spinner"></span> جاري التحميل...';
             
@@ -442,38 +398,36 @@
             const incorrectExplanation = q.options.find(opt => !opt.isCorrect)?.explanation || 'للأسف، إجابة خاطئة.';
 
             try {
-                const [questionAudioUrl, correctAudioUrl, incorrectAudioUrl] = await Promise.all([
-                    getGeminiTTS(questionTextToSpeak, signal),
-                    getGeminiTTS('أحسنتِ! إجابة صحيحة. ' + correctExplanation, signal),
-                    getGeminiTTS('للأسف، إجابة خاطئة. ' + incorrectExplanation, signal)
+                const [questionAudio, correctAudio, incorrectAudio] = await Promise.all([
+                    getGeminiTTS(questionTextToSpeak),
+                    getGeminiTTS('أحسنتِ! إجابة صحيحة. ' + correctExplanation),
+                    getGeminiTTS('للأسف، إجابة خاطئة. ' + incorrectExplanation)
                 ]);
 
-                audioCache.question = questionAudioUrl;
-                audioCache.correct = correctAudioUrl;
-                audioCache.incorrect = incorrectAudioUrl;
+                audioCache.question = questionAudio;
+                audioCache.correct = correctAudio;
+                audioCache.incorrect = incorrectAudio;
 
             } catch (e) {
                  console.error("Error during preloading:", e);
                  // Gracefully handle preloading failures without crashing the app
             } finally {
-                if (!signal.aborted) {
-                    listenBtn.disabled = false;
-                    listenBtn.textContent = '✨ اسمعي السؤال';
-                    quizLoading.classList.add('hidden');
-                    quizContent.classList.remove('hidden');
-                    circularTimerContainer.classList.remove('hidden');
-                    startTimer();
-                }
+                listenBtn.disabled = false;
+                listenBtn.textContent = '✨ اسمعي السؤال';
+                quizLoading.classList.add('hidden');
+                quizContent.classList.remove('hidden');
+                circularTimerContainer.classList.remove('hidden');
+                startTimer();
             }
         }
 
         function playTTS(type) {
-            const audioUrl = audioCache[type];
-            if (!audioUrl) {
-                console.warn(`Audio URL for type "${type}" not found in cache. Skipping playback.`);
+            const audioData = audioCache[type];
+            if (!audioData) {
+                console.warn(`Audio data for type "${type}" not found in cache. Skipping playback.`);
                 return;
             }
-            playAudioFromUrl(audioUrl);
+            playAudio(audioData.audioData, audioData.mimeType);
         }
 
         // Helper function for color interpolation
@@ -537,7 +491,7 @@
 
         // Main game logic
         function showQuestion(q) {
-            if (audioSource) audioSource.pause();
+            if (audioSourceNode) audioSourceNode.stop();
             stopTimer();
             quizContent.classList.add('hidden');
             quizLoading.classList.remove('hidden');
@@ -564,7 +518,7 @@
         }
 
         function checkAnswer(button, option) {
-            if (audioSource) audioSource.pause();
+            if (audioSourceNode) audioSourceNode.stop();
             stopTimer();
             const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
             const pointsEarned = Math.max(0, maxPointsPerQuestion - Math.floor((elapsedTime / maxTime) * maxPointsPerQuestion));
@@ -598,7 +552,7 @@
         }
 
         function showResults() {
-            if (audioSource) audioSource.pause();
+            if (audioSourceNode) audioSourceNode.stop();
             quizScreen.classList.add('hidden');
             resultScreen.classList.remove('hidden');
             
@@ -630,7 +584,7 @@
             });
 
             nextBtn.addEventListener('click', () => {
-                if (audioSource) audioSource.pause();
+                if (audioSourceNode) audioSourceNode.stop();
                 currentQuestionIndex++;
                 if (currentQuestionIndex < questions.length) {
                     showQuestion(questions[currentQuestionIndex]);
