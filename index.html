@@ -188,6 +188,9 @@
 
         let currentQuestionIndex = 0;
         let correctAnswersCount = 0;
+        let audioPlayer = new Audio(); // Use a single audio player instance for control
+        let audioCache = {};
+        let audioPromises = {};
         
         let timerInterval;
         let startTime;
@@ -195,9 +198,7 @@
         const maxPointsPerQuestion = 10;
         let warningPlayed = false;
 
-        let audioCache = {};
-        let audioContext = null;
-        let audioSourceNode = null;
+        let audioAbortController = null;
 
         // Initialize Tone.js synths for sound effects
         const correctSound = new Tone.PolySynth(Tone.Synth, {
@@ -221,6 +222,9 @@
 
         const warningSound = new Tone.Synth().toDestination();
         const timeUpSound = new Tone.Synth().toDestination();
+
+        const apiKey = "";
+        const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
 
         let questions = [
             {
@@ -306,44 +310,32 @@
             return array;
         }
 
+        // New, more reliable audio playback function
         async function playAudio(base64Data, mimeType) {
-            // Stop any currently playing audio
-            if (audioSourceNode) {
-                audioSourceNode.stop();
-                audioSourceNode.disconnect();
-            }
-
-            // Create AudioContext if it doesn't exist
-            if (!audioContext) {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-
-            try {
-                // Decode the base64 string to a binary array buffer
-                const binary_string = atob(base64Data);
-                const len = binary_string.length;
-                const bytes = new Uint8Array(len);
-                for (let i = 0; i < len; i++) {
-                    bytes[i] = binary_string.charCodeAt(i);
+            return new Promise((resolve, reject) => {
+                const binaryData = atob(base64Data);
+                const bytes = new Uint8Array(binaryData.length);
+                for (let i = 0; i < binaryData.length; i++) {
+                    bytes[i] = binaryData.charCodeAt(i);
                 }
-                const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+                const blob = new Blob([bytes.buffer], { type: mimeType });
+                const audioUrl = URL.createObjectURL(blob);
 
-                // Create a buffer source node and connect it to the audio context
-                audioSourceNode = audioContext.createBufferSource();
-                audioSourceNode.buffer = audioBuffer;
-                audioSourceNode.connect(audioContext.destination);
-
-                // Play the sound
-                audioSourceNode.start(0);
-
-            } catch (error) {
-                console.error("Error decoding or playing audio:", error);
-                messageEl.textContent = 'حدث خطأ في تشغيل الصوت: ' + error.message + '. يرجى المحاولة مرة أخرى.';
-            }
+                audioPlayer.src = audioUrl;
+                audioPlayer.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    resolve();
+                };
+                audioPlayer.onerror = (e) => {
+                    URL.revokeObjectURL(audioUrl);
+                    reject(e);
+                };
+                audioPlayer.play().catch(e => reject(e));
+            });
         }
-
-        async function getGeminiTTS(text) {
-            const apiKey = "";
+        
+        async function getGeminiTTS(text, signal) {
+            const apiKey = ""; // The platform will provide the key at runtime
             const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
             try {
                 const payload = {
@@ -360,58 +352,91 @@
                         }
                     }
                 };
+                
                 const response = await fetch(ttsApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
+                    signal: signal
                 });
 
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error("API error response:", errorText);
-                    throw new Error(`TTS API call failed with status: ${response.status}`);
+                    // Check for specific error status codes and provide a user-friendly message
+                    if (response.status === 401 || response.status === 403) {
+                        throw new Error(`TTS API call failed with status: ${response.status}. This usually means there's an issue with the API key or its permissions. Please contact support.`);
+                    } else {
+                        throw new Error(`TTS API call failed with status: ${response.status}`);
+                    }
                 }
                 
                 const result = await response.json();
-                const part = result?.candidates?.[0]?.content?.parts?.[0];
-                const audioData = part?.inlineData?.data;
-                const mimeType = part?.inlineData?.mimeType;
+                const audioPart = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = audioPart?.inlineData?.data;
+                const mimeType = audioPart?.inlineData?.mimeType;
 
-                if (audioData && mimeType) {
-                    return { audioData, mimeType };
+                if (audioData) {
+                    const binaryData = atob(audioData);
+                    const bytes = new Uint8Array(binaryData.length);
+                    for (let i = 0; i < binaryData.length; i++) {
+                        bytes[i] = binaryData.charCodeAt(i);
+                    }
+                    const blob = new Blob([bytes.buffer], { type: mimeType });
+                    return URL.createObjectURL(blob);
                 } else {
                     throw new Error("Invalid audio response from API");
                 }
             } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.log("Audio fetch was aborted.");
+                    return null;
+                }
                 console.error("Error with TTS API:", error);
-                messageEl.textContent = 'حدث خطأ في جلب الصوت: ' + error.message;
+                messageEl.textContent = 'حدث خطأ في تشغيل الصوت. يرجى المحاولة مرة أخرى لاحقًا.';
                 return null;
             }
         }
         
         async function preloadAudioForQuestion(q) {
+            // Cancel any previous pre-loading
+            if (audioAbortController) {
+                audioAbortController.abort();
+            }
+            audioAbortController = new AbortController();
+            const signal = audioAbortController.signal;
+
+            // Clear cache and promises before loading new files
+            audioCache = {};
+            audioPromises = {};
+            
+            // Show loading state and disable the button while loading
             listenBtn.disabled = true;
             listenBtn.innerHTML = '<span class="loading-spinner"></span> جاري التحميل...';
             
+            // Define the audio texts to be fetched
             const questionTextToSpeak = `${q.title}. ${q.text}`;
             const correctExplanation = q.options.find(opt => opt.isCorrect).explanation;
             const incorrectExplanation = q.options.find(opt => !opt.isCorrect)?.explanation || 'للأسف، إجابة خاطئة.';
 
-            try {
-                const [questionAudio, correctAudio, incorrectAudio] = await Promise.all([
-                    getGeminiTTS(questionTextToSpeak),
-                    getGeminiTTS('أحسنتِ! إجابة صحيحة. ' + correctExplanation),
-                    getGeminiTTS('للأسف، إجابة خاطئة. ' + incorrectExplanation)
-                ]);
+            // Store promises in the audioPromises object
+            audioPromises['question'] = getGeminiTTS(questionTextToSpeak, signal);
+            audioPromises['correct'] = getGeminiTTS('أحسنتِ! إجابة صحيحة. ' + correctExplanation, signal);
+            audioPromises['incorrect'] = getGeminiTTS('للأسف، إجابة خاطئة. ' + incorrectExplanation, signal);
 
-                audioCache.question = questionAudio;
-                audioCache.correct = correctAudio;
-                audioCache.incorrect = incorrectAudio;
+            // Wait for all promises to settle before updating the cache
+            const results = await Promise.allSettled(Object.values(audioPromises));
 
-            } catch (e) {
-                 console.error("Error during preloading:", e);
-                 // Gracefully handle preloading failures without crashing the app
-            } finally {
+            // Check results and update cache
+            Object.keys(audioPromises).forEach((key, index) => {
+                const result = results[index];
+                if (result.status === 'fulfilled' && !signal.aborted) {
+                    audioCache[key] = result.value;
+                } else if (result.reason?.name !== 'AbortError') {
+                    console.warn(`Failed to preload ${key} audio.`);
+                }
+            });
+
+            // Re-enable the button once all attempts are complete
+            if (!signal.aborted) {
                 listenBtn.disabled = false;
                 listenBtn.textContent = '✨ اسمعي السؤال';
                 quizLoading.classList.add('hidden');
@@ -420,14 +445,35 @@
                 startTimer();
             }
         }
+        
+        async function playTTS(type) {
+            // Stop any currently playing audio
+            if (audioPlayer) {
+                audioPlayer.pause();
+                // Revoke old URL to free up memory
+                if (audioPlayer.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(audioPlayer.src);
+                }
+            }
 
-        function playTTS(type) {
-            const audioData = audioCache[type];
-            if (!audioData) {
-                console.warn(`Audio data for type "${type}" not found in cache. Skipping playback.`);
+            // Wait for the specific audio file to be loaded before playing
+            if (audioPromises[type]) {
+                try {
+                    await audioPromises[type];
+                } catch (e) {
+                    console.error(`Promise for audio type "${type}" failed.`, e);
+                    return; // Exit if the promise failed
+                }
+            }
+
+            let audioUrl = audioCache[type];
+            if (!audioUrl) {
+                console.warn(`Audio URL for type "${type}" not found in cache. Skipping playback.`);
                 return;
             }
-            playAudio(audioData.audioData, audioData.mimeType);
+            
+            audioPlayer.src = audioUrl;
+            audioPlayer.play().catch(e => console.error("Error playing audio:", e));
         }
 
         // Helper function for color interpolation
@@ -491,7 +537,12 @@
 
         // Main game logic
         function showQuestion(q) {
-            if (audioSourceNode) audioSourceNode.stop();
+            if (audioPlayer) {
+                audioPlayer.pause();
+                if (audioPlayer.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(audioPlayer.src);
+                }
+            }
             stopTimer();
             quizContent.classList.add('hidden');
             quizLoading.classList.remove('hidden');
@@ -518,7 +569,9 @@
         }
 
         function checkAnswer(button, option) {
-            if (audioSourceNode) audioSourceNode.stop();
+            if (audioPlayer) {
+                audioPlayer.pause();
+            }
             stopTimer();
             const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
             const pointsEarned = Math.max(0, maxPointsPerQuestion - Math.floor((elapsedTime / maxTime) * maxPointsPerQuestion));
@@ -552,7 +605,9 @@
         }
 
         function showResults() {
-            if (audioSourceNode) audioSourceNode.stop();
+            if (audioPlayer) {
+                audioPlayer.pause();
+            }
             quizScreen.classList.add('hidden');
             resultScreen.classList.remove('hidden');
             
@@ -584,7 +639,12 @@
             });
 
             nextBtn.addEventListener('click', () => {
-                if (audioSourceNode) audioSourceNode.stop();
+                if (audioPlayer) {
+                    audioPlayer.pause();
+                    if (audioPlayer.src.startsWith('blob:')) {
+                        URL.revokeObjectURL(audioPlayer.src);
+                    }
+                }
                 currentQuestionIndex++;
                 if (currentQuestionIndex < questions.length) {
                     showQuestion(questions[currentQuestionIndex]);
