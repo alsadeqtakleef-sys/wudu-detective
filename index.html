@@ -223,9 +223,6 @@
         const warningSound = new Tone.Synth().toDestination();
         const timeUpSound = new Tone.Synth().toDestination();
 
-        const apiKey = "";
-        const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
-
         let questions = [
             {
                 title: 'ملف القضية رقم 1',
@@ -310,16 +307,6 @@
             return array;
         }
 
-        function base64ToArrayBuffer(base64) {
-            const binary_string = window.atob(base64);
-            const len = binary_string.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binary_string.charCodeAt(i);
-            }
-            return bytes.buffer;
-        }
-
         // Initialize AudioContext on first user interaction
         function initAudioContext() {
             if (!audioContext) {
@@ -353,7 +340,6 @@
                         }
                     }
                 };
-
                 const response = await fetch(ttsApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -362,6 +348,8 @@
                 });
 
                 if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error("API error response:", errorText);
                     throw new Error(`TTS API call failed with status: ${response.status}`);
                 }
                 
@@ -369,9 +357,8 @@
                 const audioData = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
                 if (audioData) {
-                    const arrayBuffer = base64ToArrayBuffer(audioData);
-                    const decodedData = await audioContext.decodeAudioData(arrayBuffer);
-                    return decodedData;
+                    const audioBuffer = base64ToArrayBuffer(audioData);
+                    return await audioContext.decodeAudioData(audioBuffer);
                 } else {
                     throw new Error("Invalid audio response from API");
                 }
@@ -384,6 +371,16 @@
                 messageEl.textContent = 'حدث خطأ في تشغيل الصوت. يرجى المحاولة مرة أخرى لاحقًا.';
                 return null;
             }
+        }
+        
+        function base64ToArrayBuffer(base64) {
+            const binary_string = atob(base64);
+            const len = binary_string.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary_string.charCodeAt(i);
+            }
+            return bytes.buffer;
         }
 
         async function preloadAudioForQuestion(q) {
